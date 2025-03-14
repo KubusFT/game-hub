@@ -1,0 +1,43 @@
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2rem;
+    background: #333;
+    color: #fff;
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 1000;
+    text-align: center;
+    border-top: 3px solid #fff;
+    border-bottom: 3px solid #fff;
+  }
+  
+  .logo img {
+    width: 75px;
+    border: 2px solid #fff;
+  }
+  
+  .nav-links {
+    list-style: none;
+    display: flex;
+    gap: 3rem;
+    font-size: 25px;
+    margin: 0 auto;
+  }
+  
+  .nav-links li a {
+    display: block;
+    color: #fff;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    transition: background-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
+    font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+    font-size: 40px;
+  }
+  
+  .nav-links li a:hover {
+    color: #fff;
+    transform: scale(1.7);
+  }

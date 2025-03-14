@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import GameItem from './GameItem';
 
+
 const GameList = () => {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
