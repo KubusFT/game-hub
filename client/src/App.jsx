@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Register from "./components/Register";
 import Login from "./components/Login";
 import NavBar from "./components/navBar";
+import GameList from "./components/GameList";
+
 function App() {
     return (
       <>
@@ -12,6 +14,7 @@ function App() {
             </Routes>
         </BrowserRouter>
         <NavBar></NavBar>
+        <GameList></GameList>
         </>
     );
 }
