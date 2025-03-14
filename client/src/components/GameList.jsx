@@ -12,6 +12,7 @@ const games = [
   { id: 9, name: 'Counter-Strike 2', rating: 0 },
   { id: 8, name: 'Wiedźmin 3', rating: 0 },
   { id: 9, name: 'Cyberpunk 2077', rating: 0 },
+  { id: 10, name: 'Helldivers 2', rating: 0 },
 ];
 
 const GameList = () => {
