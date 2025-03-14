@@ -55,7 +55,7 @@ const GameList = () => {
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <div>
+    <div className="flex flex-wrap justify-center gap-6 p-6">
       {games.map(game => (
         <GameItem key={game.id} game={game} />
       ))}

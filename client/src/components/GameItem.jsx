@@ -2,7 +2,7 @@ import React from 'react';
 
 const GameItem = ({ game }) => {
   return (
-    <div className="card game-item card-body bg-light mb-3 text-center p-4 shadow rounded border border-secondary mx-auto">
+    <div className="card game-item card-body bg-light mb-3 text-center p-4 shadow rounded border border-secondary alignnn">
       <h3>{game.name}</h3>
       <p>Release Date: {game.release_date}</p>
       {game.cover && (
