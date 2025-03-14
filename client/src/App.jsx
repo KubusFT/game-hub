@@ -5,7 +5,6 @@ import Login from "./components/Login";
 function App() {
     return (
       <>
-      <h1>Cwel</h1>
         <BrowserRouter>
             <Routes>
                 <Route path="/register" element={<Register />} />
