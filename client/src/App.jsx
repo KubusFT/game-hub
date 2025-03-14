@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Register from "./components/Register";
 import Login from "./components/Login";
+import GameList from "./components/GameList";
 
 function App() {
     return (
@@ -11,6 +12,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
             </Routes>
         </BrowserRouter>
+        <GameList></GameList>
         </>
     );
 }
