@@ -9,25 +9,37 @@ const GameList = () => {
   useEffect(() => {
     const fetchGames = async () => {
       try {
-        const response = await fetch('https://api.igdb.com/v4/games', {
-          method: 'POST',
-          headers: {
-            'Client-ID': process.env.REACT_APP_IGDB_CLIENT_ID,
-            'Authorization': `Bearer ${process.env.REACT_APP_IGDB_ACCESS_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            fields: 'id,name,release_dates,cover',
-            limit: 10,
-          }),
-        });
+        // Fetch Steam app list (game IDs)
+        const response = await fetch('http://localhost:4000/api/games');
 
         if (!response.ok) {
-          throw new Error('Failed to fetch games');
+          throw new Error('Failed to fetch game list from Steam');
         }
 
         const data = await response.json();
-        setGames(data);
+
+        // Now, you have the list of apps (game IDs)
+        const gameList = data.applist.apps;
+
+        // Example: Fetch additional info for the first 10 games
+        const gameDetailsPromises = gameList.slice(0, 50).map(async (game) => {
+          const gameDetailResponse = await fetch(`http://localhost:4000/api/game-details/${game.appid}`);
+          const gameDetailData = await gameDetailResponse.json();
+          
+          // Return formatted data for each game
+          return {
+            id: game.appid,
+            name: game.name,
+            release_date: gameDetailData[game.appid]?.data?.release_date?.date,
+            cover: gameDetailData[game.appid]?.data?.header_image,  // Cover image URL
+            type: gameDetailData[game.appid]?.data?.type
+          };
+        });
+
+        // Wait for all game details to be fetched
+        const gameDetails = await Promise.all(gameDetailsPromises);
+
+        setGames(gameDetails);
       } catch (err) {
         setError(err.message);
       } finally {
