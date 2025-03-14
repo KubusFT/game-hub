@@ -1,17 +1,17 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Register from "./components/Register";
 import Login from "./components/Login";
-
+import NavBar from "./components/navBar";
 function App() {
     return (
       <>
-      <h1>Cwel</h1>
         <BrowserRouter>
             <Routes>
                 <Route path="/register" element={<Register />} />
                 <Route path="/login" element={<Login />} />
             </Routes>
         </BrowserRouter>
+        <NavBar></NavBar>
         </>
     );
 }
