@@ -16,6 +16,10 @@ export default [
         sourceType: 'module',
       },
     },
+    env: {
+      browser: true,
+      node: true, // Add this line to enable Node.js global variables and scoping
+    },
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
