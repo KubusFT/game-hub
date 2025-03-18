@@ -2,13 +2,10 @@ import React from 'react';
 
 const GameItem = ({ game }) => {
   return (
-    <div className="card game-item card-body bg-light mb-3 text-center p-4 shadow rounded border border-secondary alignnn">
+    <div>
       <h3>{game.name}</h3>
-      <p>Release Date: {game.release_date}</p>
-      {game.cover && (
-        // Steam API provides header_image as the cover image URL
-        <img src={game.cover} alt={game.name} />
-      )}
+      {game.cover && <img src={game.cover} alt={game.name} />}
+      <p>Release Date: {game.release_date || 'N/A'}</p>
     </div>
   );
 };

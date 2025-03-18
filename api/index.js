@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require('body-parser');
 const mysql = require('mysql2');
-const request = require('supertest');
 const app = express();
 const util = require('util');
 const PORT = process.env.PORT || 4000;
@@ -10,6 +9,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const NodeCache = require('node-cache');
+const gameCache = new NodeCache({ stdTTL: 3600 }); // Cache for 1 hour
 
 require('dotenv').config();
 
@@ -31,12 +32,69 @@ const connection = mysql.createConnection({
     database: process.env.DB_NAME
 });
 
+const query = util.promisify(connection.query).bind(connection);
+
 app.get('/api/games', async (req, res) => {
     try {
-        const response = await axios.get(
-            `https://api.steampowered.com/ISteamApps/GetAppList/v2?key=${process.env.REACT_APP_STEAM_API_KEY}`
-        );
-        res.json(response.data);
+        // Check if the data is in the cache
+        const cachedGames = gameCache.get('games');
+        if (cachedGames) {
+            return res.json(cachedGames);
+        }
+
+        // Load the game list from the JSON file
+        const gameList = require('./assets/anything.json').applist.apps;
+
+        const gameDetails = [];
+        let index = 0;
+
+        const interval = setInterval(async () => {
+            if (index >= gameList.length) {
+                clearInterval(interval);
+                // Cache the data
+                gameCache.set('games', gameDetails);
+                return res.json(gameDetails);
+            }
+
+            const game = gameList[index];
+            index++;
+
+            if (!game.appid) {
+                return;
+            }
+
+            try {
+                const gameDetailResponse = await axios.get(`https://store.steampowered.com/api/appdetails?appids=${game.appid}`);
+                const gameDetailData = gameDetailResponse.data[game.appid]?.data;
+
+                if (gameDetailData && gameDetailData.type === 'game') {
+                    const { name, release_date, header_image, type } = gameDetailData;
+                    const releaseDate = release_date?.date || null;
+                    const cover = header_image || null;
+
+                    await query('INSERT INTO games (id, name, release_date, cover, type) VALUES (?, ?, ?, ?, ?)', [
+                        game.appid,
+                        name,
+                        releaseDate,
+                        cover,
+                        type
+                    ]);
+
+                    gameDetails.push({
+                        id: game.appid,
+                        name,
+                        release_date: releaseDate,
+                        cover,
+                        type
+                    });
+
+                    // Log progress
+                    console.log(`Saved game ${index} of ${gameList.length}`);
+                }
+            } catch (error) {
+                console.error(`Error fetching details for appid ${game.appid}: ${error.message}`);
+            }
+        }, 100);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
