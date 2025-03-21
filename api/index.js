@@ -5,9 +5,6 @@ const mysql = require('mysql2');
 const app = express();
 const util = require('util');
 const PORT = process.env.PORT || 4000;
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const gameCache = new NodeCache({ stdTTL: 3600 }); // Cache for 1 hour
@@ -34,6 +31,40 @@ const connection = mysql.createConnection({
 
 const query = util.promisify(connection.query).bind(connection);
 
+const getIGDBAccessToken = async () => {
+    try {
+        const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+            params: {
+                client_id: process.env.IGDB_CLIENT_ID,
+                client_secret: process.env.IGDB_CLIENT_SECRET,
+                grant_type: 'client_credentials'
+            }
+        });
+        return response.data.access_token;
+    } catch (error) {
+        console.error('Error fetching IGDB access token:', error.message);
+        throw error;
+    }
+};
+
+const fetchGamesFromIGDB = async (accessToken, offset = 0, limit = 50) => {
+    try {
+        const response = await axios.post('https://api.igdb.com/v4/games', 
+            `fields id, name, cover.url, first_release_date; limit ${limit}; offset ${offset};`, 
+            {
+                headers: {
+                    'Client-ID': process.env.IGDB_CLIENT_ID,
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            }
+        );
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching games from IGDB:', error.message);
+        throw error;
+    }
+};
+
 app.get('/api/games', async (req, res) => {
     try {
         // Check if the data is in the cache
@@ -42,70 +73,66 @@ app.get('/api/games', async (req, res) => {
             return res.json(cachedGames);
         }
 
-        // Load the game list from the JSON file
-        const gameList = require('./assets/anything.json').applist.apps;
+        // Fetch games from the database
+        const games = await query('SELECT * FROM games');
+        if (games.length > 0) {
+            // Cache the data
+            gameCache.set('games', games);
+            return res.json(games);
+        }
+
+        // Fetch the IGDB access token
+        const accessToken = await getIGDBAccessToken();
+
+        let offset = 0;
+        const limit = 50;
+        let allGames = [];
+
+        while (true) {
+            const gameList = await fetchGamesFromIGDB(accessToken, offset, limit);
+            if (gameList.length === 0) break;
+
+            allGames = allGames.concat(gameList);
+            offset += limit;
+        }
 
         const gameDetails = [];
-        let index = 0;
+        for (const game of allGames) {
+            const { id, name, first_release_date, cover } = game;
+            const coverUrl = cover ? cover.url : null;
 
-        const interval = setInterval(async () => {
-            if (index >= gameList.length) {
-                clearInterval(interval);
-                // Cache the data
-                gameCache.set('games', gameDetails);
-                return res.json(gameDetails);
-            }
+            await query('INSERT INTO games (id, name, release_date, cover, type) VALUES (?, ?, ?, ?, ?)', [
+                id,
+                name,
+                first_release_date,
+                coverUrl,
+                'game'
+            ]);
 
-            const game = gameList[index];
-            index++;
+            gameDetails.push({
+                id,
+                name,
+                release_date: first_release_date,
+                cover: coverUrl,
+                type: 'game'
+            });
+        }
 
-            if (!game.appid) {
-                return;
-            }
-
-            try {
-                const gameDetailResponse = await axios.get(`https://store.steampowered.com/api/appdetails?appids=${game.appid}`);
-                const gameDetailData = gameDetailResponse.data[game.appid]?.data;
-
-                if (gameDetailData && gameDetailData.type === 'game') {
-                    const { name, release_date, header_image, type } = gameDetailData;
-                    const releaseDate = release_date?.date || null;
-                    const cover = header_image || null;
-
-                    await query('INSERT INTO games (id, name, release_date, cover, type) VALUES (?, ?, ?, ?, ?)', [
-                        game.appid,
-                        name,
-                        releaseDate,
-                        cover,
-                        type
-                    ]);
-
-                    gameDetails.push({
-                        id: game.appid,
-                        name,
-                        release_date: releaseDate,
-                        cover,
-                        type
-                    });
-
-                    // Log progress
-                    console.log(`Saved game ${index} of ${gameList.length}`);
-                }
-            } catch (error) {
-                console.error(`Error fetching details for appid ${game.appid}: ${error.message}`);
-            }
-        }, 100);
+        // Cache the data
+        gameCache.set('games', gameDetails);
+        res.json(gameDetails);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-app.get('/api/game-details/:appid', async (req, res) => {
-    const { appid } = req.params;
+app.post('/api/games/:id/vote', async (req, res) => {
+    const gameId = req.params.id;
     try {
-        const response = await axios.get(`https://store.steampowered.com/api/appdetails?appids=${appid}`);
-        res.json(response.data);
+        await query('UPDATE games SET votes = votes + 1 WHERE id = ?', [gameId]);
+        res.status(200).json({ message: 'Vote counted' });
     } catch (error) {
+        console.error('Error voting for game:', error.message);
         res.status(500).json({ message: error.message });
     }
 });

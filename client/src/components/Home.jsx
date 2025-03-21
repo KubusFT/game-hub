@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import GameItem from './GameItem';
 
-const GameList = () => {
+const Home = () => {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -31,12 +30,20 @@ const GameList = () => {
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <div className="flex flex-wrap justify-center gap-6 p-6">
-      {games.map(game => (
-        <GameItem key={game.id} game={game} />
-      ))}
+    <div className="game-list">
+      <h1>Game List</h1>
+      <ul>
+        {games.map(game => (
+          <li key={game.id} className="game-item">
+            <h2>{game.name}</h2>
+            <p>Release Date: {new Date(game.release_date * 1000).toLocaleDateString()}</p>
+            {game.cover && <img src={game.cover} alt={game.name} />}
+            <button className="star-button">⭐</button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };
 
-export default GameList;
+export default Home;

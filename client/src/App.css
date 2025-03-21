@@ -45,3 +45,27 @@
   align-content: center;
 }
 
+.game-list {
+  padding: 20px;
+}
+
+.game-item {
+  border: 1px solid #ccc;
+  padding: 10px;
+  margin-bottom: 10px;
+  list-style-type: none;
+}
+
+.game-item img {
+  max-width: 100px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.star-button {
+  background-color: #ff0;
+  border: none;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
