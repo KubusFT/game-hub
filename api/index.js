@@ -5,9 +5,9 @@ const mysql = require('mysql2');
 const app = express();
 const util = require('util');
 const PORT = process.env.PORT || 4000;
-const axios = require('axios');
 const NodeCache = require('node-cache');
 const gameCache = new NodeCache({ stdTTL: 3600 }); // Cache for 1 hour
+const bcrypt = require('bcrypt');
 
 require('dotenv').config();
 
@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(cors());
 app.use(bodyParser.json());
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Allows all origins; in production, you can limit it to specific origins
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Allows all origins; in production, restrict to specific origins
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     next();
@@ -31,118 +31,148 @@ const connection = mysql.createConnection({
 
 const query = util.promisify(connection.query).bind(connection);
 
-const getIGDBAccessToken = async () => {
-    try {
-        const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
-            params: {
-                client_id: process.env.IGDB_CLIENT_ID,
-                client_secret: process.env.IGDB_CLIENT_SECRET,
-                grant_type: 'client_credentials'
-            }
-        });
-        return response.data.access_token;
-    } catch (error) {
-        console.error('Error fetching IGDB access token:', error.message);
-        throw error;
-    }
-};
-
-const fetchGamesFromIGDB = async (accessToken, offset = 0, limit = 50) => {
-    try {
-        const response = await axios.post('https://api.igdb.com/v4/games', 
-            `fields id, name, cover.url, first_release_date; limit ${limit}; offset ${offset};`, 
-            {
-                headers: {
-                    'Client-ID': process.env.IGDB_CLIENT_ID,
-                    'Authorization': `Bearer ${accessToken}`
-                }
-            }
-        );
-        return response.data;
-    } catch (error) {
-        console.error('Error fetching games from IGDB:', error.message);
-        throw error;
-    }
-};
-
-app.get('/api/games', async (req, res) => {
-    try {
-        // Check if the data is in the cache
-        const cachedGames = gameCache.get('games');
-        if (cachedGames) {
-            return res.json(cachedGames);
-        }
-
-        // Fetch games from the database
-        const games = await query('SELECT * FROM games');
-        if (games.length > 0) {
-            // Cache the data
-            gameCache.set('games', games);
-            return res.json(games);
-        }
-
-        // Fetch the IGDB access token
-        const accessToken = await getIGDBAccessToken();
-
-        let offset = 0;
-        const limit = 50;
-        let allGames = [];
-
-        while (true) {
-            const gameList = await fetchGamesFromIGDB(accessToken, offset, limit);
-            if (gameList.length === 0) break;
-
-            allGames = allGames.concat(gameList);
-            offset += limit;
-        }
-
-        const gameDetails = [];
-        for (const game of allGames) {
-            const { id, name, first_release_date, cover } = game;
-            const coverUrl = cover ? cover.url : null;
-
-            await query('INSERT INTO games (id, name, release_date, cover, type) VALUES (?, ?, ?, ?, ?)', [
-                id,
-                name,
-                first_release_date,
-                coverUrl,
-                'game'
-            ]);
-
-            gameDetails.push({
-                id,
-                name,
-                release_date: first_release_date,
-                cover: coverUrl,
-                type: 'game'
-            });
-        }
-
-        // Cache the data
-        gameCache.set('games', gameDetails);
-        res.json(gameDetails);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-app.post('/api/games/:id/vote', async (req, res) => {
-    const gameId = req.params.id;
-    try {
-        await query('UPDATE games SET votes = votes + 1 WHERE id = ?', [gameId]);
-        res.status(200).json({ message: 'Vote counted' });
-    } catch (error) {
-        console.error('Error voting for game:', error.message);
-        res.status(500).json({ message: error.message });
-    }
-});
-
 connection.connect((err) => {
     if (err) {
         console.error('Error connecting to the database: ', err);
         return;
     }
     console.log('Connected to the database');
+});
+
+// Endpoint pobierający listę gier
+app.get("/api/games", async (req, res) => {
+    try {
+        const userId = req.query.userId || null; // Pobieramy ID użytkownika z query stringa
+        
+        // Modyfikujemy zapytanie o listę gier, aby pobierało ocenę użytkownika
+        const games = await query(`
+            SELECT 
+                g.id, 
+                g.name, 
+                IF(g.rating_count > 0, g.rating_sum/g.rating_count, 0) AS average_rating,
+                g.rating_count,
+                ${userId ? '(SELECT rating FROM game_votes WHERE user_id = ? AND game_id = g.id) AS user_rating' : 'NULL AS user_rating'}
+            FROM games g
+            ORDER BY g.name ASC
+        `, userId ? [userId] : []);
+        
+        res.json(games);
+    } catch (error) {
+        console.error("Error fetching games:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint do oddawania głosu – ocena gwiazdkowa
+app.post("/api/games/:id/vote", async (req, res) => {
+    const gameId = req.params.id;
+    const { rating, userId } = req.body; // Wymagamy ID użytkownika, który głosuje
+    
+    if (!userId) {
+        return res.status(401).json({ error: "Musisz być zalogowany, aby ocenić grę" });
+    }
+    
+    if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ error: "Nieprawidłowa wartość oceny" });
+    }
+    
+    try {
+        // Sprawdzamy, czy użytkownik już głosował na tę grę
+        const existingVote = await query(
+            "SELECT * FROM game_votes WHERE user_id = ? AND game_id = ?",
+            [userId, gameId]
+        );
+        
+        let oldRating = 0;
+        
+        if (existingVote.length > 0) {
+            // Użytkownik już głosował - pobieramy starą ocenę
+            oldRating = existingVote[0].rating;
+            
+            // Aktualizujemy jego głos
+            await query(
+                "UPDATE game_votes SET rating = ? WHERE user_id = ? AND game_id = ?",
+                [rating, userId, gameId]
+            );
+            
+            // Aktualizujemy sumę ocen w tabeli games (odejmujemy starą, dodajemy nową)
+            await query(
+                "UPDATE games SET rating_sum = rating_sum - ? + ? WHERE id = ?",
+                [oldRating, rating, gameId]
+            );
+        } else {
+            // Użytkownik głosuje po raz pierwszy
+            await query(
+                "INSERT INTO game_votes (user_id, game_id, rating) VALUES (?, ?, ?)",
+                [userId, gameId, rating]
+            );
+            
+            // Aktualizujemy sumę ocen i licznik w tabeli games
+            await query(
+                "UPDATE games SET rating_sum = rating_sum + ?, rating_count = rating_count + 1 WHERE id = ?",
+                [rating, gameId]
+            );
+        }
+        
+        // Inwalidacja cache, aby przy kolejnym pobraniu listy gier dane były świeże
+        gameCache.del("games");
+        
+        // Zwracamy zaktualizowane dane o grze
+        const updatedGame = await query(`
+            SELECT 
+                id, 
+                name, 
+                IF(rating_count > 0, rating_sum/rating_count, 0) AS average_rating,
+                rating_count,
+                (SELECT rating FROM game_votes WHERE user_id = ? AND game_id = ?) AS user_rating
+            FROM games 
+            WHERE id = ?
+        `, [userId, gameId, gameId]);
+        
+        res.json(updatedGame[0]);
+    } catch (error) {
+        console.error("Error voting for game:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.post('/api/users/register', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required.' });
+    }
+    try {
+        // Szyfrujemy hasło. Domyślnie 10 salt rounds.
+        const hashedPassword = await bcrypt.hash(password, 10);
+        // Zakładamy, że istnieje tabela "users" z kolumnami: id, username, password.
+        await query("INSERT INTO users (username, password) VALUES (?, ?)", [username, hashedPassword]);
+        res.status(201).json({ message: 'User registered successfully.' });
+    } catch (error) {
+        console.error("Registration error:", error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/api/users/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required.' });
+    }
+    try {
+        const result = await query("SELECT * FROM users WHERE username = ?", [username]);
+        if (result.length === 0) {
+            return res.status(400).json({ error: 'Invalid credentials.' });
+        }
+        const user = result[0];
+        const match = await bcrypt.compare(password, user.password);
+        if (!match) {
+            return res.status(400).json({ error: 'Invalid credentials.' });
+        }
+        res.json({ message: 'Logged in successfully.', user: { id: user.id, username: user.username } });
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 app.listen(PORT, () => {

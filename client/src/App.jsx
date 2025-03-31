@@ -1,22 +1,21 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import GameList from "./components/GameList";
 import Register from "./components/Register";
 import Login from "./components/Login";
-import NavBar from "./components/navBar";
-import Home from "./components/Home";
+import Nav from "./components/Nav";
 
 function App() {
-    return (
-      <>
-        <BrowserRouter>
-            <Routes>
-                <Route path="/register" element={<Register />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/" element={<Home />} />
-            </Routes>
-        </BrowserRouter>
-        <NavBar />
-      </>
-    );
+  return (
+    <Router>
+      <Nav />
+      <Routes>
+        <Route path="/" element={<GameList />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/login" element={<Login />} />
+      </Routes>
+    </Router>
+  );
 }
 
 export default App;

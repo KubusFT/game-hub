@@ -1,0 +1,12 @@
+.game-list {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 1rem;
+}
+
+.game-list h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #0077ff;
+    height: 50px;
+}
