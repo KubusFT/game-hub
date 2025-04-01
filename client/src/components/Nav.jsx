@@ -1,68 +1,65 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FaSearch } from "react-icons/fa";
-import logo from "../assets/kot.png";
 
 const Nav = () => {
+  const [user, setUser] = useState(null);
+  const [isModerator, setIsModerator] = useState(false);
   const navigate = useNavigate();
-  const user = JSON.parse(sessionStorage.getItem("user") || "null");
-  const [searchTerm, setSearchTerm] = useState("");
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    console.log("Searching for:", searchTerm);
-  };
+  useEffect(() => {
+    const loggedInUser = JSON.parse(sessionStorage.getItem("user") || "null");
+    setUser(loggedInUser);
+    
+    if (loggedInUser) {
+      fetch(`http://localhost:4000/api/users/${loggedInUser.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.role === 'moderator' || data.role === 'admin') {
+            setIsModerator(true);
+          }
+        })
+        .catch(err => console.error('Error fetching user data:', err));
+    }
+  }, []);
 
-  const signOut = () => {
+  const handleLogout = () => {
     sessionStorage.removeItem("user");
+    setUser(null);
+    setIsModerator(false);
     navigate("/");
   };
 
   return (
-    <nav className="flex items-center bg-[#0077ff] px-4 py-2">
-  {/* Logo section with fixed width */}
-  <div className="w-1/4">
-    <Link to="/" className="text-2xl font-bold">
-      <img src={logo} alt="Logo" className="h-10 w-auto" />
-    </Link>
-  </div>
-  
-  {/* Search section with fixed width and perfect centering */}
-  <div className="w-2/4 flex justify-center">
-    <form onSubmit={handleSearch} className="flex items-center w-full max-w-md">
-      <input
-        type="text"
-        placeholder="Szukaj..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="p-1 rounded-l-sm border-[#005fcc] border-1 outline-none w-full"
-      />
-      <button type="submit" className="p-2 bg-[#005fcc] text-white rounded-r border-0 cursor-pointer">
-        <FaSearch />
-      </button>
-    </form>
-  </div>
-  
-  {/* User section with fixed width */}
-  <div className="w-1/4 flex justify-end">
-    {user ? (
-      <>
-        <p className="text-white mr-4 py-2">Witaj, {user.username}!</p>
-        <button 
-          onClick={signOut} 
-          className="px-4 py-2 bg-[#ff4d4f] text-white rounded border-0 cursor-pointer"
-        >
-          Wyloguj
-        </button>
-      </>
-    ) : (
-      <>
-        <Link to="/login" className="text-white no-underline mr-4">Logowanie</Link>
-        <Link to="/register" className="text-white no-underline">Rejestracja</Link>
-      </>
-    )}
-  </div>
-</nav>
+    <nav className="bg-blue-600 p-4 text-white shadow-md">
+      <div className="container mx-auto flex justify-between items-center">
+        <div className="text-xl font-bold">
+          <Link to="/">Game Hub</Link>
+        </div>
+        <div className="flex items-center space-x-4">
+          <Link to="/" className="hover:text-gray-300">Gry</Link>
+          <Link to="/submit-game" className="hover:text-gray-300">Dodaj grę</Link>
+          {isModerator && (
+            <Link to="/moderate" className="hover:text-gray-300">Panel moderacji</Link>
+          )}
+          {user ? (
+            <div className="flex items-center space-x-4">
+              <span>Witaj, {user.username}!</span>
+              <button 
+                onClick={handleLogout}
+                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+              >
+                Wyloguj
+              </button>
+            </div>
+          ) : (
+            <div className="flex space-x-4">
+              <Link to="/login" className="hover:text-gray-300">Logowanie</Link>
+              <Link to="/register" className="hover:text-gray-300">Rejestracja</Link>
+            </div>
+          )}
+        </div>
+      </div>
+    </nav>
   );
 };
 

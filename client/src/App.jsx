@@ -4,6 +4,8 @@ import GameList from "./components/GameList";
 import Register from "./components/Register";
 import Login from "./components/Login";
 import Nav from "./components/Nav";
+import GameSubmission from "./components/GameSubmission";
+import ModerateGames from "./components/ModerateGames";
 import bgImage from "./assets/tlo.PNG";
 
 function App() {
@@ -21,6 +23,8 @@ function App() {
           <Route path="/" element={<GameList />} />
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/submit-game" element={<GameSubmission />} />
+          <Route path="/moderate" element={<ModerateGames />} />
         </Routes>
       </Router>
     </div>

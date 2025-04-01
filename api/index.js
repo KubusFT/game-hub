@@ -161,17 +161,176 @@ app.post('/api/users/login', async (req, res) => {
     try {
         const result = await query("SELECT * FROM users WHERE username = ?", [username]);
         if (result.length === 0) {
-            return res.status(400).json({ error: 'Invalid credentials.' });
+            return res.status(400).json({ error: 'Wprowadzono złą nazwę uzytkownika lub hasło.' });
         }
         const user = result[0];
         const match = await bcrypt.compare(password, user.password);
         if (!match) {
-            return res.status(400).json({ error: 'Invalid credentials.' });
+            return res.status(400).json({ error: 'Wprowadzono złą nazwę uzytkownika lub hasło.' });
         }
         res.json({ message: 'Logged in successfully.', user: { id: user.id, username: user.username } });
     } catch (error) {
         console.error("Login error:", error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Endpoint do zgłaszania nowych gier przez użytkowników
+app.post("/api/games/submit", async (req, res) => {
+    const { name, description, releaseDate } = req.body;
+    const userId = req.body.userId;
+    
+    if (!userId) {
+        return res.status(401).json({ error: "Musisz być zalogowany, aby dodać grę" });
+    }
+    
+    if (!name) {
+        return res.status(400).json({ error: "Nazwa gry jest wymagana" });
+    }
+    
+    try {
+        // Sprawdź, czy gra o tej nazwie już istnieje w głównej tabeli
+        const existingGame = await query("SELECT id FROM games WHERE name = ?", [name]);
+        if (existingGame.length > 0) {
+            return res.status(400).json({ error: "Gra o takiej nazwie już istnieje" });
+        }
+        
+        // Sprawdź, czy gra o tej nazwie czeka na zatwierdzenie
+        const pendingGame = await query(
+            "SELECT id FROM pending_games WHERE name = ? AND status = 'pending'", 
+            [name]
+        );
+        if (pendingGame.length > 0) {
+            return res.status(400).json({ error: "Gra o takiej nazwie już oczekuje na zatwierdzenie" });
+        }
+        
+        // Wszystko OK, dodaj grę do oczekujących
+        await query(
+            "INSERT INTO pending_games (name, description, release_date, submitted_by) VALUES (?, ?, ?, ?)",
+            [name, description, releaseDate, userId]
+        );
+        
+        res.status(201).json({ message: "Gra została zgłoszona i oczekuje na zatwierdzenie przez moderatora." });
+    } catch (error) {
+        console.error("Error submitting game:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint dla moderatorów do pobierania oczekujących gier
+app.get("/api/games/pending", async (req, res) => {
+    const userId = req.query.userId;
+    
+    try {
+        // Sprawdź, czy użytkownik jest moderatorem
+        const userCheck = await query("SELECT role FROM users WHERE id = ?", [userId]);
+        if (userCheck.length === 0 || (userCheck[0].role !== 'moderator' && userCheck[0].role !== 'admin')) {
+            return res.status(403).json({ error: "Brak uprawnień" });
+        }
+        
+        const pendingGames = await query(`
+            SELECT pg.*, u.username as submitted_by_username
+            FROM pending_games pg
+            JOIN users u ON pg.submitted_by = u.id
+            WHERE pg.status = 'pending'
+            ORDER BY pg.submission_date DESC
+        `);
+        
+        res.json(pendingGames);
+    } catch (error) {
+        console.error("Error fetching pending games:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint dla moderatorów do zatwierdzania gier
+app.post("/api/games/approve/:id", async (req, res) => {
+    const gameId = req.params.id;
+    const userId = req.body.userId;
+    
+    try {
+        // Sprawdź, czy użytkownik jest moderatorem
+        const userCheck = await query("SELECT role FROM users WHERE id = ?", [userId]);
+        if (userCheck.length === 0 || (userCheck[0].role !== 'moderator' && userCheck[0].role !== 'admin')) {
+            return res.status(403).json({ error: "Brak uprawnień" });
+        }
+        
+        // Pobierz dane gry
+        const gameData = await query("SELECT * FROM pending_games WHERE id = ?", [gameId]);
+        if (gameData.length === 0) {
+            return res.status(404).json({ error: "Gra nie została znaleziona" });
+        }
+        
+        const game = gameData[0];
+        
+        // Sprawdź, czy gra o tej nazwie już istnieje
+        const existingGame = await query("SELECT id FROM games WHERE name = ?", [game.name]);
+        if (existingGame.length > 0) {
+            await query("UPDATE pending_games SET status = 'rejected' WHERE id = ?", [gameId]);
+            return res.status(400).json({ error: "Gra o takiej nazwie już istnieje w bazie danych" });
+        }
+        
+        // Dodaj grę do głównej tabeli gier
+        await query(
+            "INSERT INTO games (name, rating_sum, rating_count) VALUES (?, 0, 0)",
+            [game.name]
+        );
+        
+        // Zaktualizuj status w tabeli pending_games
+        await query(
+            "UPDATE pending_games SET status = 'approved' WHERE id = ?",
+            [gameId]
+        );
+        
+        // Inwalidacja cache
+        gameCache.del("games");
+        
+        res.json({ message: "Gra została zatwierdzona" });
+    } catch (error) {
+        console.error("Error approving game:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint dla moderatorów do odrzucania gier
+app.post("/api/games/reject/:id", async (req, res) => {
+    const gameId = req.params.id;
+    const userId = req.body.userId;
+    
+    try {
+        // Sprawdź, czy użytkownik jest moderatorem
+        const userCheck = await query("SELECT role FROM users WHERE id = ?", [userId]);
+        if (userCheck.length === 0 || (userCheck[0].role !== 'moderator' && userCheck[0].role !== 'admin')) {
+            return res.status(403).json({ error: "Brak uprawnień" });
+        }
+        
+        // Zaktualizuj status w tabeli pending_games
+        await query(
+            "UPDATE pending_games SET status = 'rejected' WHERE id = ?",
+            [gameId]
+        );
+        
+        res.json({ message: "Gra została odrzucona" });
+    } catch (error) {
+        console.error("Error rejecting game:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint do pobierania danych użytkownika
+app.get("/api/users/:id", async (req, res) => {
+    const userId = req.params.id;
+    
+    try {
+        const userData = await query("SELECT id, username, role FROM users WHERE id = ?", [userId]);
+        if (userData.length === 0) {
+            return res.status(404).json({ error: "Użytkownik nie istnieje" });
+        }
+        
+        res.json(userData[0]);
+    } catch (error) {
+        console.error("Error fetching user data:", error);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
