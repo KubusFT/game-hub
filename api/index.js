@@ -473,6 +473,37 @@ app.put("/api/users/:id/profile", async (req, res) => {
     }
 });
 
+// Endpoint do wyszukiwania gier
+app.get("/api/games/search", async (req, res) => {
+    const searchQuery = req.query.q;
+    
+    if (!searchQuery) {
+        return res.json([]);
+    }
+    
+    try {
+        // Wyszukujemy gry, których nazwa zawiera podaną frazę
+        const games = await query(`
+            SELECT id, name, release_date, rating_sum, rating_count
+            FROM games
+            WHERE name LIKE ?
+            ORDER BY 
+                CASE 
+                    WHEN name LIKE ? THEN 0
+                    WHEN name LIKE ? THEN 1
+                    ELSE 2
+                END,
+                name ASC
+            LIMIT 20
+        `, [`%${searchQuery}%`, `${searchQuery}%`, `%${searchQuery}`]);
+        
+        res.json(games);
+    } catch (error) {
+        console.error("Error searching games:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server listening on ${PORT}`);
 });
