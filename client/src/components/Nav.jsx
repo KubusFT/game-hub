@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import kotLogo from "../assets/kot.png"; // Możesz użyć innego obrazu, jeśli wolisz
 
 const Nav = () => {
   const [user, setUser] = useState(null);
@@ -10,6 +11,7 @@ const Nav = () => {
     const loggedInUser = JSON.parse(sessionStorage.getItem("user") || "null");
     setUser(loggedInUser);
     
+    // Sprawdź, czy użytkownik jest moderatorem
     if (loggedInUser) {
       fetch(`http://localhost:4000/api/users/${loggedInUser.id}`)
         .then(res => res.json())
@@ -32,8 +34,9 @@ const Nav = () => {
   return (
     <nav className="bg-blue-600 p-4 text-white shadow-md">
       <div className="container mx-auto flex justify-between items-center">
-        <div className="text-xl font-bold">
-          <Link to="/">Game Hub</Link>
+        <div className="flex items-center">
+          <img src={kotLogo} alt="Game Hub Logo" className="h-10 w-10 mr-2" />
+          <Link to="/" className="text-xl font-bold">Game Hub</Link>
         </div>
         <div className="flex items-center space-x-4">
           <Link to="/" className="hover:text-gray-300">Gry</Link>
@@ -43,7 +46,9 @@ const Nav = () => {
           )}
           {user ? (
             <div className="flex items-center space-x-4">
-              <span>Witaj, {user.username}!</span>
+              <Link to={`/profile/${user.id}`} className="hover:text-gray-300">
+                Profil {user.username}
+              </Link>
               <button 
                 onClick={handleLogout}
                 className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"

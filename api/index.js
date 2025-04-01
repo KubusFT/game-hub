@@ -317,12 +317,18 @@ app.post("/api/games/reject/:id", async (req, res) => {
     }
 });
 
-// Endpoint do pobierania danych użytkownika
+// Zaktualizuj endpoint do pobierania danych użytkownika
 app.get("/api/users/:id", async (req, res) => {
     const userId = req.params.id;
     
     try {
-        const userData = await query("SELECT id, username, role FROM users WHERE id = ?", [userId]);
+        const userData = await query(`
+            SELECT u.id, u.username, u.role, u.created_at, p.bio
+            FROM users u
+            LEFT JOIN user_profiles p ON u.id = p.user_id
+            WHERE u.id = ?
+        `, [userId]);
+        
         if (userData.length === 0) {
             return res.status(404).json({ error: "Użytkownik nie istnieje" });
         }
@@ -330,6 +336,139 @@ app.get("/api/users/:id", async (req, res) => {
         res.json(userData[0]);
     } catch (error) {
         console.error("Error fetching user data:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint do pobierania rozszerzonych danych profilu użytkownika
+app.get("/api/users/:id/profile", async (req, res) => {
+    const userId = req.params.id;
+    
+    try {
+        // Pobierz podstawowe dane użytkownika
+        const userData = await query(`
+            SELECT id, username, role, created_at
+            FROM users 
+            WHERE id = ?
+        `, [userId]);
+        
+        if (userData.length === 0) {
+            return res.status(404).json({ error: "Użytkownik nie istnieje" });
+        }
+        
+        const user = userData[0];
+        
+        // Pobierz dane z tabeli user_profiles, jeśli istnieje
+        let bioData = null;
+        try {
+            bioData = await query(`
+                SELECT bio 
+                FROM user_profiles 
+                WHERE user_id = ?
+            `, [userId]);
+        } catch (error) {
+            console.log("user_profiles table may not exist yet:", error.message);
+        }
+        
+        // Pobierz liczbę ocenionych gier przez użytkownika
+        let ratedGamesCount = 0;
+        try {
+            const ratedGamesResult = await query(`
+                SELECT COUNT(*) as count 
+                FROM game_votes 
+                WHERE user_id = ?
+            `, [userId]);
+            ratedGamesCount = ratedGamesResult[0].count;
+        } catch (error) {
+            console.log("game_votes table may not exist yet:", error.message);
+        }
+        
+        // Pobierz liczbę zgłoszonych gier przez użytkownika
+        let submittedGamesCount = 0;
+        try {
+            const submittedGamesResult = await query(`
+                SELECT COUNT(*) as count 
+                FROM pending_games 
+                WHERE submitted_by = ?
+            `, [userId]);
+            submittedGamesCount = submittedGamesResult[0].count;
+        } catch (error) {
+            console.log("pending_games table may not exist yet:", error.message);
+        }
+        
+        // Pobierz listę ocenionych gier
+        let ratedGames = [];
+        try {
+            ratedGames = await query(`
+                SELECT g.id, g.name, gv.rating, 
+                       IF(g.rating_count > 0, g.rating_sum/g.rating_count, 0) AS average_rating
+                FROM game_votes gv
+                JOIN games g ON gv.game_id = g.id
+                WHERE gv.user_id = ?
+                ORDER BY gv.created_at DESC
+                LIMIT 10
+            `, [userId]);
+        } catch (error) {
+            console.log("Error fetching rated games:", error.message);
+        }
+        
+        // Zwróć kompletne dane profilu
+        res.json({
+            ...user,
+            bio: bioData && bioData.length > 0 ? bioData[0].bio : null,
+            stats: {
+                ratedGamesCount,
+                submittedGamesCount,
+            },
+            ratedGames
+        });
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// Endpoint do aktualizacji profilu użytkownika
+app.put("/api/users/:id/profile", async (req, res) => {
+    const userId = req.params.id;
+    const { bio, requesterId } = req.body;
+    
+    // Sprawdź czy użytkownik aktualizuje własny profil
+    if (parseInt(userId) !== parseInt(requesterId)) {
+        return res.status(403).json({ error: "Nie masz uprawnień do edycji tego profilu" });
+    }
+    
+    try {
+        // Sprawdź czy użytkownik istnieje
+        const userCheck = await query("SELECT id FROM users WHERE id = ?", [userId]);
+        if (userCheck.length === 0) {
+            return res.status(404).json({ error: "Użytkownik nie istnieje" });
+        }
+        
+        // Sprawdź czy tabela user_profiles istnieje, jeśli nie - utwórz ją
+        await query(`
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id INT PRIMARY KEY,
+                bio TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        `);
+        
+        // Sprawdź czy profil już istnieje
+        const profileCheck = await query("SELECT user_id FROM user_profiles WHERE user_id = ?", [userId]);
+        
+        if (profileCheck.length === 0) {
+            // Utwórz nowy profil
+            await query("INSERT INTO user_profiles (user_id, bio) VALUES (?, ?)", [userId, bio]);
+        } else {
+            // Aktualizuj istniejący profil
+            await query("UPDATE user_profiles SET bio = ? WHERE user_id = ?", [bio, userId]);
+        }
+        
+        res.json({ message: "Profil został zaktualizowany" });
+    } catch (error) {
+        console.error("Error updating user profile:", error);
         res.status(500).json({ error: "Internal server error" });
     }
 });

@@ -6,6 +6,7 @@ import Login from "./components/Login";
 import Nav from "./components/Nav";
 import GameSubmission from "./components/GameSubmission";
 import ModerateGames from "./components/ModerateGames";
+import Profile from "./components/Profile";
 import bgImage from "./assets/tlo.PNG";
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/submit-game" element={<GameSubmission />} />
           <Route path="/moderate" element={<ModerateGames />} />
+          <Route path="/profile/:id" element={<Profile />} />
         </Routes>
       </Router>
     </div>
